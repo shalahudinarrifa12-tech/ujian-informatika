@@ -405,50 +405,48 @@
 
   const SPLIT_SCREEN_ASPECT_RATIO_THRESHOLD = 0.60;
 
-  async function handleLogin(e) {
-    e.preventDefault();
-    const user = document.getElementById("username").value.trim();
-    const kelas = document.getElementById("studentClass").value.trim();
-    const pass = document.getElementById("password").value.trim();
+async function handleLogin(e) {
+  e.preventDefault();
+  const user = document.getElementById("username").value.trim();
+  const kelas = document.getElementById("studentClass").value.trim();
+  const pass = document.getElementById("password").value.trim();
 
-    if (pass !== "1234") {
-      alert("Password salah! Gunakan password '1234'.");
-      return;
-    }
-
-    if (!user || !kelas) {
-      alert("Silakan lengkapi Nama Siswa dan Kelas.");
-      return;
-    }
-
-    document.getElementById("btnLogin").innerText = "Menghubungkan...";
-    document.getElementById("btnLogin").disabled = true;
-
-    studentNameData = user;
-    studentClassData = kelas;
-
-    try {
-      const resp = await fetch(API_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "getQuestions" })
-      });
-      const resData = await resp.json();
-
-      if (resData.success) {
-        rawQuestions = resData.data;
-        document.getElementById("displayStudentName").innerText = studentNameData;
-        document.getElementById("displayStudentClass").innerText = studentClassData;
-        showScreen("screen-instructions");
-      } else {
-        alert("Gagal mengambil data soal dari server.");
-      }
-    } catch (err) {
-      alert("Gagal terhubung ke server. Pastikan URL Apps Script sudah benar.");
-    } finally {
-      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
-      document.getElementById("btnLogin").disabled = false;
-    }
+  if (pass !== "1234") {
+    alert("Password salah! Gunakan password '1234'.");
+    return;
   }
+
+  if (!user || !kelas) {
+    alert("Silakan lengkapi Nama Siswa dan Kelas.");
+    return;
+  }
+
+  document.getElementById("btnLogin").innerText = "Menghubungkan...";
+  document.getElementById("btnLogin").disabled = true;
+
+  studentNameData = user;
+  studentClassData = kelas;
+
+  try {
+    // Memanggil API menggunakan GET (100% Kompatibel dengan Safari iPhone)
+    const resp = await fetch(API_URL + "?action=getQuestions");
+    const resData = await resp.json();
+
+    if (resData.success) {
+      rawQuestions = resData.data;
+      document.getElementById("displayStudentName").innerText = studentNameData;
+      document.getElementById("displayStudentClass").innerText = studentClassData;
+      showScreen("screen-instructions");
+    } else {
+      alert("Gagal mengambil data soal dari server.");
+    }
+  } catch (err) {
+    alert("Gagal terhubung ke server. Pastikan koneksi internet stabil dan URL Apps Script benar.");
+  } finally {
+    document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
+    document.getElementById("btnLogin").disabled = false;
+  }
+}
 
   function showScreen(id) {
     document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
@@ -575,52 +573,55 @@
   }
 
   async function finishExam(statusKecurangan) {
-    if (isExamFinished) return;
-    isExamFinished = true;
-    clearInterval(timerInterval);
+  if (isExamFinished) return;
+  isExamFinished = true;
+  clearInterval(timerInterval);
 
-    let correctCount = 0;
-    randomizedQuestions.forEach((q, idx) => {
-      if (userAnswers[idx] === q.newCorrectIndex) {
-        correctCount++;
-      }
+  let correctCount = 0;
+  randomizedQuestions.forEach((q, idx) => {
+    if (userAnswers[idx] === q.newCorrectIndex) {
+      correctCount++;
+    }
+  });
+
+  const totalCount = randomizedQuestions.length;
+  const finalScore = Math.round((correctCount / totalCount) * 100);
+
+  document.getElementById("scoreDisplay").innerText = finalScore;
+  document.getElementById("correctDisplay").innerText = correctCount;
+  document.getElementById("totalDisplay").innerText = totalCount;
+  
+  const badge = document.getElementById("statusBadge");
+  badge.innerText = statusKecurangan;
+  if (statusKecurangan.startsWith("Wajar") || statusKecurangan === "Waktu Habis") {
+    badge.className = "status-badge status-clean";
+  } else {
+    badge.className = "status-badge status-cheat";
+  }
+
+  showScreen("screen-result");
+
+  // Pengiriman data yang aman dari pemblokiran Safari iPhone
+  try {
+    const payload = new URLSearchParams({
+      studentName: studentNameData,
+      studentClass: studentClassData,
+      correctCount: correctCount,
+      totalCount: totalCount,
+      score: finalScore,
+      statusCurang: statusKecurangan
     });
 
-    const totalCount = randomizedQuestions.length;
-    const finalScore = Math.round((correctCount / totalCount) * 100);
-
-    document.getElementById("scoreDisplay").innerText = finalScore;
-    document.getElementById("correctDisplay").innerText = correctCount;
-    document.getElementById("totalDisplay").innerText = totalCount;
-    
-    const badge = document.getElementById("statusBadge");
-    badge.innerText = statusKecurangan;
-    if (statusKecurangan.startsWith("Wajar") || statusKecurangan === "Waktu Habis") {
-      badge.className = "status-badge status-clean";
-    } else {
-      badge.className = "status-badge status-cheat";
-    }
-
-    showScreen("screen-result");
-
-    // Send Result to Apps Script API
-    try {
-      await fetch(API_URL, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "submitExam",
-          studentName: studentNameData,
-          studentClass: studentClassData,
-          correctCount: correctCount,
-          totalCount: totalCount,
-          score: finalScore,
-          statusCurang: statusKecurangan
-        })
-      });
-    } catch (err) {
-      console.error("Gagal mengirim hasil ujian ke server.");
-    }
+    fetch(API_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: payload
+    });
+  } catch (err) {
+    console.error("Gagal mengirim hasil ujian.");
   }
+}
 </script>
 
 </body>
