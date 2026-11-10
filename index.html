@@ -16,7 +16,6 @@
       --text-muted: #64748b;
       --danger: #ef4444;
       --success: #10b981;
-      --warning: #f59e0b;
     }
 
     * {
@@ -299,41 +298,6 @@
     .hidden {
       display: none !important;
     }
-
-    /* Modal Warning CSST styling */
-    .modal-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(15, 23, 42, 0.85);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-      padding: 20px;
-    }
-
-    .modal-box {
-      background: #fff;
-      border-radius: 16px;
-      padding: 24px;
-      max-width: 450px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    }
-
-    .modal-box h3 {
-      color: var(--danger);
-      margin-bottom: 12px;
-      font-size: 1.25rem;
-    }
-
-    .modal-box p {
-      font-size: 0.9rem;
-      color: var(--text-main);
-      line-height: 1.5;
-      margin-bottom: 20px;
-    }
   </style>
 </head>
 <body>
@@ -375,8 +339,7 @@
       <li>Sistem Dilengkapi <b>Sistem Anti-Curang Otomatis</b>:
         <ul>
           <li>Dilarang berpindah tab browser, membuka aplikasi lain, atau meminimize window.</li>
-          <li>Jangan membuka aplikasi lain atau berpindah tab selama ujian. Deteksi layar terbelah tidak didukung secara konsisten oleh semua perangkat, terutama iPhone.</li>
-          <li><b>Satu kali pelanggaran saja langsung menghentikan ujian dan hasil dikirim ke guru.</b></li>
+          <li>Dilarang menggunakan mode <b>Layar Terbelah (Split Screen / Multi-window)</b>. Ujian akan dihentikan otomatis jika fitur belah layar aktif.</li>
         </ul>
       </li>
     </ol>
@@ -414,7 +377,7 @@
   <div id="screen-result" class="screen">
     <div class="result-box">
       <h2>Ujian Telah Selesai</h2>
-      <p id="resultMessage" style="color: var(--text-muted); margin-top: 5px;">Hasil ujian sedang dikirim ke server.</p>
+      <p id="resultMessage" style="color: var(--text-muted); margin-top: 5px;">Hasil Ujian Anda telah berhasil disimpan.</p>
       
       <div class="result-score" id="scoreDisplay">0</div>
       
@@ -426,37 +389,24 @@
 
 </div>
 
-<!-- CUSTOM MODAL PERINGATAN KECURANGAN -->
-<div id="customWarningModal" class="modal-overlay hidden">
-  <div class="modal-box">
-    <h3 id="modalTitle">⚠️ PERINGATAN KECURANGAN</h3>
-    <p id="modalBody">Alasan kecurangan akan muncul di sini.</p>
-    <button class="btn btn-success" onclick="closeWarningModal()">Kembali Ujian & Layar Penuh</button>
-  </div>
-</div>
-
 <script>
+  // GANTI LINK DI BAWAH INI DENGAN LINK WEB APP APPS SCRIPT ANDA (/exec)
   const API_URL = "https://script.google.com/macros/s/AKfycbwdrRXQ7T5IyCFLgDCqbPfjTjk6FUfi6xYcd8hBhld7gRGqHdt_wWy9xrI4m2IH77ypDQ/exec";
-  const EXAM_STORAGE_KEY = "tesInformatikaExamState_v2";
-  const EXAM_DURATION_SECONDS = 60 * 60;
 
   let rawQuestions = [];
   let randomizedQuestions = [];
   let userAnswers = {};
   let currentStep = 0;
   let timerInterval = null;
-  let totalSeconds = EXAM_DURATION_SECONDS;
-  let deadlineTimestamp = null;
+  let totalSeconds = 60 * 60;
   let studentNameData = "";
   let studentClassData = "";
   let isExamFinished = false;
-  let cheatCount = 0;
-  let examStarted = false;
-  let pendingWarningReason = "";
+
+  const SPLIT_SCREEN_ASPECT_RATIO_THRESHOLD = 0.60;
 
   async function handleLogin(e) {
     e.preventDefault();
-
     const user = document.getElementById("username").value.trim();
     const kelas = document.getElementById("studentClass").value.trim();
     const pass = document.getElementById("password").value.trim();
@@ -465,312 +415,184 @@
       alert("Password salah! Gunakan password '1234'.");
       return;
     }
+
     if (!user || !kelas) {
       alert("Silakan lengkapi Nama Siswa dan Kelas.");
       return;
     }
 
-    const loginButton = document.getElementById("btnLogin");
-    loginButton.innerText = "Menghubungkan...";
-    loginButton.disabled = true;
+    document.getElementById("btnLogin").innerText = "Menghubungkan...";
+    document.getElementById("btnLogin").disabled = true;
+
     studentNameData = user;
     studentClassData = kelas;
 
     try {
-      const response = await fetch(API_URL + "?action=getQuestions", { method: "GET" });
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      const responseData = await response.json();
+      const resp = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "getQuestions" })
+      });
+      const resData = await resp.json();
 
-      if (!responseData.success || !Array.isArray(responseData.data) || !responseData.data.length) {
-        throw new Error("Data soal tidak tersedia.");
+      if (resData.success) {
+        rawQuestions = resData.data;
+        document.getElementById("displayStudentName").innerText = studentNameData;
+        document.getElementById("displayStudentClass").innerText = studentClassData;
+        showScreen("screen-instructions");
+      } else {
+        alert("Gagal mengambil data soal dari server.");
       }
-
-      rawQuestions = responseData.data;
-      document.getElementById("displayStudentName").innerText = studentNameData;
-      document.getElementById("displayStudentClass").innerText = studentClassData;
-      showScreen("screen-instructions");
-    } catch (error) {
-      console.error(error);
-      alert("Gagal mengambil soal. Periksa koneksi internet dan pastikan Web App Apps Script sudah aktif untuk akses siapa saja.");
+    } catch (err) {
+      alert("Gagal terhubung ke server. Pastikan URL Apps Script sudah benar.");
     } finally {
-      loginButton.innerText = "Masuk Sistem Ujian";
-      loginButton.disabled = false;
+      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
+      document.getElementById("btnLogin").disabled = false;
     }
   }
 
   function showScreen(id) {
-    document.querySelectorAll(".screen").forEach(screen => screen.classList.remove("active"));
+    document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
     document.getElementById(id).classList.add("active");
   }
 
-  function requestFullScreen() {
-    // iPhone Safari tidak mendukung Fullscreen API untuk halaman web biasa.
-    const element = document.documentElement;
-    try {
-      if (element.requestFullscreen) {
-        const result = element.requestFullscreen();
-        if (result && typeof result.catch === "function") result.catch(() => {});
-      } else if (element.webkitRequestFullscreen) {
-        element.webkitRequestFullscreen();
-      }
-    } catch (error) {
-      console.info("Mode layar penuh tidak tersedia pada browser ini.");
+  function startExam() {
+    if (checkSplitScreen()) {
+      triggerCheating("Mulai Ujian dalam kondisi Layar Terbelah (Split-screen detected)");
+      return;
+    }
+
+    randomizeExamData();
+    showScreen("screen-exam");
+    renderQuestion();
+    startTimer();
+    initAntiCheat();
+
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
     }
   }
 
   function randomizeExamData() {
-    const shuffled = JSON.parse(JSON.stringify(rawQuestions));
+    let shuffled = JSON.parse(JSON.stringify(rawQuestions));
     shuffled.sort(() => Math.random() - 0.5);
 
-    shuffled.forEach(question => {
-      const options = question.options.map((option, index) => ({
-        text: option,
-        isCorrect: index === question.ans
-      }));
-      options.sort(() => Math.random() - 0.5);
-      question.shuffledOptions = options.map(option => option.text);
-      question.newCorrectIndex = options.findIndex(option => option.isCorrect);
+    shuffled.forEach(q => {
+      let optionsWithIndex = q.options.map((opt, i) => ({ text: opt, isCorrect: i === q.ans }));
+      optionsWithIndex.sort(() => Math.random() - 0.5);
+      
+      q.shuffledOptions = optionsWithIndex.map(o => o.text);
+      q.newCorrectIndex = optionsWithIndex.findIndex(o => o.isCorrect);
     });
 
     randomizedQuestions = shuffled;
     document.getElementById("totalQCount").innerText = randomizedQuestions.length;
   }
 
-  function startExam() {
-    if (!rawQuestions.length) {
-      alert("Soal belum berhasil dimuat. Silakan masuk kembali.");
-      return;
-    }
-
-    randomizeExamData();
-    userAnswers = {};
-    currentStep = 0;
-    totalSeconds = EXAM_DURATION_SECONDS;
-    deadlineTimestamp = Date.now() + totalSeconds * 1000;
-    cheatCount = 0;
-    isExamFinished = false;
-    examStarted = true;
-
-    showScreen("screen-exam");
-    renderQuestion();
-    saveExamState();
-    startTimer();
-    initAntiCheat();
-    requestFullScreen();
-  }
-
   function renderQuestion() {
-    if (!randomizedQuestions.length) return;
-
-    const question = randomizedQuestions[currentStep];
+    const q = randomizedQuestions[currentStep];
     document.getElementById("currentQIndex").innerText = currentStep + 1;
-    document.getElementById("questionText").innerText = question.q;
+    document.getElementById("questionText").innerText = q.q;
 
     const container = document.getElementById("optionsContainer");
     container.innerHTML = "";
+
     const labels = ["A", "B", "C", "D"];
-
-    question.shuffledOptions.forEach((optionText, index) => {
-      const selected = userAnswers[currentStep] === index;
-      const button = document.createElement("div");
-      button.className = "option-btn" + (selected ? " selected" : "");
-      button.setAttribute("role", "button");
-      button.setAttribute("tabindex", "0");
-
-      const tag = document.createElement("div");
-      tag.className = "option-tag";
-      tag.textContent = labels[index];
-
-      const text = document.createElement("div");
-      text.textContent = optionText;
-
-      button.appendChild(tag);
-      button.appendChild(text);
-      button.addEventListener("click", () => selectOption(index));
-      button.addEventListener("keydown", event => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          selectOption(index);
-        }
-      });
-      container.appendChild(button);
+    q.shuffledOptions.forEach((optText, index) => {
+      const isSelected = userAnswers[currentStep] === index;
+      const btn = document.createElement("div");
+      btn.className = `option-btn ${isSelected ? "selected" : ""}`;
+      btn.onclick = () => selectOption(index);
+      btn.innerHTML = `<div class="option-tag">${labels[index]}</div><div>${optText}</div>`;
+      container.appendChild(btn);
     });
 
     document.getElementById("btnPrev").style.visibility = currentStep === 0 ? "hidden" : "visible";
-    document.getElementById("btnNext").classList.toggle("hidden", currentStep === randomizedQuestions.length - 1);
-    document.getElementById("btnSubmit").classList.toggle("hidden", currentStep !== randomizedQuestions.length - 1);
+    if (currentStep === randomizedQuestions.length - 1) {
+      document.getElementById("btnNext").classList.add("hidden");
+      document.getElementById("btnSubmit").classList.remove("hidden");
+    } else {
+      document.getElementById("btnNext").classList.remove("hidden");
+      document.getElementById("btnSubmit").classList.add("hidden");
+    }
   }
 
   function selectOption(index) {
-    if (isExamFinished || !examStarted) return;
+    if(isExamFinished) return;
     userAnswers[currentStep] = index;
     renderQuestion();
-    saveExamState();
   }
 
   function navigate(direction) {
-    if (isExamFinished) return;
-    const nextStep = currentStep + direction;
-    if (nextStep < 0 || nextStep >= randomizedQuestions.length) return;
-    currentStep = nextStep;
+    currentStep += direction;
     renderQuestion();
-    saveExamState();
-  }
-
-  function updateTimerDisplay() {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    document.getElementById("timerDisplay").innerText =
-      minutes.toString().padStart(2, "0") + ":" + seconds.toString().padStart(2, "0");
   }
 
   function startTimer() {
-    clearInterval(timerInterval);
-    updateTimerDisplay();
-
     timerInterval = setInterval(() => {
-      if (!examStarted || isExamFinished) return;
-
-      // Menggunakan waktu absolut agar hitung mundur tetap akurat setelah browser ditinggal.
-      totalSeconds = Math.max(0, Math.ceil((deadlineTimestamp - Date.now()) / 1000));
-      updateTimerDisplay();
+      totalSeconds--;
+      let m = Math.floor(totalSeconds / 60);
+      let s = totalSeconds % 60;
+      document.getElementById("timerDisplay").innerText = 
+        `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 
       if (totalSeconds <= 0) {
         clearInterval(timerInterval);
         finishExam("Waktu Habis");
-      } else {
-        saveExamState();
       }
     }, 1000);
   }
 
   function initAntiCheat() {
-    // Satu-satunya pemicu utama adalah visibilitychange.
-    // Event blur sengaja tidak dipakai karena di iOS sering terpanggil bersamaan
-    // dengan perpindahan aplikasi dan dapat menghitung satu kejadian dua kali.
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-  }
-
-  function handleVisibilityChange() {
-    if (!examStarted || isExamFinished) return;
-
-    if (document.visibilityState === "hidden") {
-      registerViolation("Terdeteksi berpindah tab atau membuka aplikasi lain.");
-    }
-  }
-
-  function registerViolation(reason) {
-    if (isExamFinished || !examStarted) return;
-
-    cheatCount = 1;
-    pendingWarningReason = "";
-    saveExamState();
-
-    // Tidak ada peringatan pertama: satu kejadian yang terdeteksi langsung mengakhiri ujian.
-    finishExam("DIBATALKAN (Curang 1x: " + reason + ")");
-  }
-
-  function showWarningModal(reason) {
-    document.getElementById("modalTitle").innerText = "⚠️ PERINGATAN KECURANGAN (1/2)";
-    document.getElementById("modalBody").innerHTML =
-      "<b>Alasan:</b> " + escapeHtml(reason) + "<br><br>" +
-      "Ujian tetap dapat dilanjutkan. Jangan berpindah tab atau membuka aplikasi lain lagi.<br>" +
-      "<span style='color: var(--danger); font-weight:600;'>Jika terjadi pelanggaran sekali lagi, ujian akan dihentikan otomatis.</span>";
-    document.getElementById("customWarningModal").classList.remove("hidden");
-  }
-
-  function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, character => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-    })[character]);
-  }
-
-  function closeWarningModal() {
-    document.getElementById("customWarningModal").classList.add("hidden");
-    requestFullScreen();
-    saveExamState();
-  }
-
-  function saveExamState() {
-    if (!examStarted || isExamFinished) return;
-
-    const state = {
-      studentNameData,
-      studentClassData,
-      randomizedQuestions,
-      userAnswers,
-      currentStep,
-      totalSeconds,
-      deadlineTimestamp,
-      cheatCount,
-      examStarted
-    };
-
-    try {
-      sessionStorage.setItem(EXAM_STORAGE_KEY, JSON.stringify(state));
-    } catch (error) {
-      console.warn("Status ujian tidak dapat disimpan di penyimpanan sesi.", error);
-    }
-  }
-
-  function restoreExamState() {
-    try {
-      const saved = sessionStorage.getItem(EXAM_STORAGE_KEY);
-      if (!saved) return false;
-
-      const state = JSON.parse(saved);
-      if (!state || !state.examStarted || !Array.isArray(state.randomizedQuestions) || !state.randomizedQuestions.length) {
-        return false;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && !isExamFinished) {
+        triggerCheating("Terdeteksi Pindah Tab / Minimize App");
       }
+    });
 
-      studentNameData = state.studentNameData || "";
-      studentClassData = state.studentClassData || "";
-      randomizedQuestions = state.randomizedQuestions;
-      userAnswers = state.userAnswers || {};
-      currentStep = Math.min(Math.max(Number(state.currentStep) || 0, 0), randomizedQuestions.length - 1);
-      deadlineTimestamp = Number(state.deadlineTimestamp) || (Date.now() + Number(state.totalSeconds || 0) * 1000);
-      totalSeconds = Math.max(0, Math.ceil((deadlineTimestamp - Date.now()) / 1000));
-      cheatCount = Number(state.cheatCount) || 0;
-      examStarted = true;
-      isExamFinished = false;
+    window.addEventListener("blur", () => {
+      if (!isExamFinished) {
+        triggerCheating("Terdeteksi Meninggalkan Layar Ujian (Blur)");
+      }
+    });
 
-      document.getElementById("displayStudentName").innerText = studentNameData;
-      document.getElementById("displayStudentClass").innerText = studentClassData;
-      document.getElementById("totalQCount").innerText = randomizedQuestions.length;
-      showScreen("screen-exam");
-      renderQuestion();
-      startTimer();
-      initAntiCheat();
+    window.addEventListener("resize", () => {
+      if (!isExamFinished && checkSplitScreen()) {
+        triggerCheating("Terdeteksi Layar Terbelah (Split-screen/Multi-window)");
+      }
+    });
+  }
 
-      // Jika halaman dimuat ulang saat ujian berlangsung, hitung sebagai pelanggaran.
-      registerViolation("Halaman ujian dimuat ulang atau sesi ujian terputus.");
-      return true;
-    } catch (error) {
-      console.warn("Tidak dapat memulihkan sesi ujian.", error);
-      return false;
-    }
+  function checkSplitScreen() {
+    const ratio = window.innerHeight / window.screen.height;
+    const widthRatio = window.innerWidth / window.screen.width;
+    return ratio < SPLIT_SCREEN_ASPECT_RATIO_THRESHOLD || widthRatio < 0.60;
+  }
+
+  function triggerCheating(reason) {
+    if (isExamFinished) return;
+    alert("KECURANGAN TERDETEKSI!\n" + reason + "\nUjian Anda telah dihentikan secara otomatis.");
+    finishExam("DIBATALKAN KARENA KECURANGAN: " + reason);
   }
 
   async function finishExam(statusKecurangan) {
     if (isExamFinished) return;
-
     isExamFinished = true;
-    examStarted = false;
     clearInterval(timerInterval);
-    document.removeEventListener("visibilitychange", handleVisibilityChange);
 
     let correctCount = 0;
-    randomizedQuestions.forEach((question, index) => {
-      if (userAnswers[index] === question.newCorrectIndex) correctCount++;
+    randomizedQuestions.forEach((q, idx) => {
+      if (userAnswers[idx] === q.newCorrectIndex) {
+        correctCount++;
+      }
     });
 
     const totalCount = randomizedQuestions.length;
-    const finalScore = totalCount ? Math.round((correctCount / totalCount) * 100) : 0;
+    const finalScore = Math.round((correctCount / totalCount) * 100);
 
     document.getElementById("scoreDisplay").innerText = finalScore;
     document.getElementById("correctDisplay").innerText = correctCount;
     document.getElementById("totalDisplay").innerText = totalCount;
-
+    
     const badge = document.getElementById("statusBadge");
     badge.innerText = statusKecurangan;
     if (statusKecurangan.startsWith("Wajar") || statusKecurangan === "Waktu Habis") {
@@ -780,42 +602,25 @@
     }
 
     showScreen("screen-result");
-    document.getElementById("resultMessage").innerText = "Mengirim hasil ujian ke server...";
 
-    const payload = new URLSearchParams({
-      studentName: studentNameData,
-      studentClass: studentClassData,
-      correctCount: String(correctCount),
-      totalCount: String(totalCount),
-      score: String(finalScore),
-      statusCurang: statusKecurangan
-    });
-
+    // Send Result to Apps Script API
     try {
-      // no-cors dipakai agar POST form dapat dikirim dari GitHub Pages ke Apps Script.
-      // Responsnya opaque, jadi browser tidak bisa memastikan isi balasan server.
       await fetch(API_URL, {
         method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body: payload.toString(),
-        keepalive: true
+        body: JSON.stringify({
+          action: "submitExam",
+          studentName: studentNameData,
+          studentClass: studentClassData,
+          correctCount: correctCount,
+          totalCount: totalCount,
+          score: finalScore,
+          statusCurang: statusKecurangan
+        })
       });
-      document.getElementById("resultMessage").innerText =
-        "Permintaan pengiriman hasil telah dikirim. Guru dapat memeriksa Spreadsheet untuk memastikan data masuk.";
-    } catch (error) {
-      console.error("Gagal mengirim hasil ujian:", error);
-      document.getElementById("resultMessage").innerText =
-        "Pengiriman hasil gagal karena koneksi. Hubungi guru dan jangan menutup halaman ini sebelum mendapat arahan.";
-    } finally {
-      try { sessionStorage.removeItem(EXAM_STORAGE_KEY); } catch (error) {}
+    } catch (err) {
+      console.error("Gagal mengirim hasil ujian ke server.");
     }
   }
-
-  // Pulihkan sesi bila browser memuat ulang halaman ujian pada tab yang sama.
-  window.addEventListener("DOMContentLoaded", () => {
-    restoreExamState();
-  });
 </script>
 
 </body>
