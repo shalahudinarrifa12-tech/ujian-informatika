@@ -393,7 +393,7 @@
   // GANTI LINK DI BAWAH INI DENGAN LINK WEB APP APPS SCRIPT ANDA (/exec)
   const API_URL = "https://script.google.com/macros/s/AKfycbwdrRXQ7T5IyCFLgDCqbPfjTjk6FUfi6xYcd8hBhld7gRGqHdt_wWy9xrI4m2IH77ypDQ/exec";
 
-  let rawQuestions = [];
+let rawQuestions = [];
   let randomizedQuestions = [];
   let userAnswers = {};
   let currentStep = 0;
@@ -402,6 +402,10 @@
   let studentNameData = "";
   let studentClassData = "";
   let isExamFinished = false;
+
+  // VARIABEL HITUNG KECURANGAN BARU
+  let cheatCount = 0;             // Menghitung jumlah pelanggaran
+  const maxCheatAllowed = 2;      // Batas maksimal pelanggaran (2x langsung selesai)
 
   const SPLIT_SCREEN_ASPECT_RATIO_THRESHOLD = 0.60;
 
@@ -568,10 +572,30 @@ async function handleLogin(e) {
 
   function triggerCheating(reason) {
     if (isExamFinished) return;
-    alert("KECURANGAN TERDETEKSI!\n" + reason + "\nUjian Anda telah dihentikan secara otomatis.");
-    finishExam("DIBATALKAN KARENA KECURANGAN: " + reason);
-  }
+    
+    // Tambah jumlah hitungan kecurangan
+    cheatCount++;
 
+    if (cheatCount < maxCheatAllowed) {
+      // PERINGATAN PERTAMA (Kecurangan ke-1)
+      alert(
+        "⚠️ PERINGATAN KECURANGAN (1/" + maxCheatAllowed + ")!\n\n" +
+        "Alasan: " + reason + "\n\n" +
+        "Dilarang berpindah tab, minimize, blur layar, atau membelah layar!\n" +
+        "Jika Anda melakukan pelanggaran 1 KALI LAGI, ujian akan DITERHENTIKAN OTOMATIS dan nilai langsung dikirim."
+      );
+    } else {
+      // PELANGGARAN KEDUA (Kecurangan ke-2 -> Ujian Langsung Selesai)
+      alert(
+        "🚫 UJIAN DIHENTIKAN PAKSA!\n\n" +
+        "Anda telah melakukan pelanggaran terbanyak (" + cheatCount + "/" + maxCheatAllowed + ").\n" +
+        "Alasan Terakhir: " + reason + "\n\n" +
+        "Ujian Anda resmi dibatalkan dan nilai telah disimpan ke sistem."
+      );
+      
+      finishExam("DIBATALKAN (Curang 2x: " + reason + ")");
+    }
+  }
   async function finishExam(statusKecurangan) {
   if (isExamFinished) return;
   isExamFinished = true;
