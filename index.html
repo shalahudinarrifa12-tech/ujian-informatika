@@ -376,7 +376,7 @@
         <ul>
           <li>Dilarang berpindah tab browser, membuka aplikasi lain, atau meminimize window.</li>
           <li>Jangan membuka aplikasi lain atau berpindah tab selama ujian. Deteksi layar terbelah tidak didukung secara konsisten oleh semua perangkat, terutama iPhone.</li>
-          <li>Toleransi Pelanggaran: Maksimal <b>1 Kali Peringatan</b>. Pelanggaran ke-2 akan menghentikan ujian secara paksa.</li>
+          <li><b>Satu kali pelanggaran saja langsung menghentikan ujian dan hasil dikirim ke guru.</b></li>
         </ul>
       </li>
     </ol>
@@ -439,7 +439,6 @@
   const API_URL = "https://script.google.com/macros/s/AKfycbwdrRXQ7T5IyCFLgDCqbPfjTjk6FUfi6xYcd8hBhld7gRGqHdt_wWy9xrI4m2IH77ypDQ/exec";
   const EXAM_STORAGE_KEY = "tesInformatikaExamState_v2";
   const EXAM_DURATION_SECONDS = 60 * 60;
-  const MAX_CHEAT_ALLOWED = 2;
 
   let rawQuestions = [];
   let randomizedQuestions = [];
@@ -657,30 +656,18 @@
 
     if (document.visibilityState === "hidden") {
       registerViolation("Terdeteksi berpindah tab atau membuka aplikasi lain.");
-      return;
-    }
-
-    // Peringatan ditampilkan ketika siswa kembali ke halaman ujian.
-    if (pendingWarningReason && !isExamFinished) {
-      showWarningModal(pendingWarningReason);
-      pendingWarningReason = "";
     }
   }
 
   function registerViolation(reason) {
-    if (isExamFinished) return;
+    if (isExamFinished || !examStarted) return;
 
-    cheatCount = Math.min(cheatCount + 1, MAX_CHEAT_ALLOWED);
+    cheatCount = 1;
+    pendingWarningReason = "";
     saveExamState();
 
-    if (cheatCount === 1) {
-      pendingWarningReason = reason;
-      return;
-    }
-
-    // Pelanggaran kedua langsung mengakhiri ujian dan mengirim hasil.
-    pendingWarningReason = "";
-    finishExam("DIBATALKAN (Curang 2x: " + reason + ")");
+    // Tidak ada peringatan pertama: satu kejadian yang terdeteksi langsung mengakhiri ujian.
+    finishExam("DIBATALKAN (Curang 1x: " + reason + ")");
   }
 
   function showWarningModal(reason) {
@@ -755,7 +742,7 @@
       startTimer();
       initAntiCheat();
 
-      // Jika halaman dimuat ulang setelah perpindahan aplikasi/tab, hitung sebagai pelanggaran.
+      // Jika halaman dimuat ulang saat ujian berlangsung, hitung sebagai pelanggaran.
       registerViolation("Halaman ujian dimuat ulang atau sesi ujian terputus.");
       return true;
     } catch (error) {
