@@ -23,8 +23,6 @@
       margin: 0;
       padding: 0;
       font-family: 'Poppins', sans-serif;
-      user-select: none;
-      -webkit-user-select: none;
     }
 
     body {
@@ -290,11 +288,6 @@
       color: #065f46;
     }
 
-    .status-cheat {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-
     .hidden {
       display: none !important;
     }
@@ -336,12 +329,8 @@
     <ol class="instructions-list">
       <li>Jumlah Soal: <b>50 Butir Pilihan Ganda</b>.</li>
       <li>Alokasi Waktu: <b>60 Menit</b>. Waktu akan berjalan otomatis begitu tombol 'Mulai Ujian' diklik.</li>
-      <li>Sistem Dilengkapi <b>Sistem Anti-Curang Otomatis</b>:
-        <ul>
-          <li>Dilarang berpindah tab browser, membuka aplikasi lain, atau meminimize window.</li>
-          <li>Dilarang menggunakan mode <b>Layar Terbelah (Split Screen / Multi-window)</b>. Ujian akan dihentikan otomatis jika fitur belah layar aktif.</li>
-        </ul>
-      </li>
+      <li>Jawablah seluruh pertanyaan dengan teliti dan jujur.</li>
+      <li>Setelah selesai menjawab seluruh soal, tekan tombol 'Kirim Jawaban' di halaman terakhir.</li>
     </ol>
     <button class="btn btn-success" onclick="startExam()">Mulai Ujian Sekarang</button>
   </div>
@@ -369,7 +358,7 @@
     <div class="exam-footer">
       <button class="btn btn-nav btn-secondary" id="btnPrev" onclick="navigate(-1)">Sebelumnya</button>
       <button class="btn btn-nav" id="btnNext" onclick="navigate(1)">Berikutnya</button>
-      <button class="btn btn-nav btn-success hidden" id="btnSubmit" onclick="finishExam('Wajar (Selesai Tepat Waktu)')">Kirim Jawaban</button>
+      <button class="btn btn-nav btn-success hidden" id="btnSubmit" onclick="finishExam('Selesai')">Kirim Jawaban</button>
     </div>
   </div>
 
@@ -383,14 +372,13 @@
       
       <p>Skor Benar: <b id="correctDisplay">0</b> / <b id="totalDisplay">50</b></p>
       
-      <div id="statusBadge" class="status-badge status-clean">Wajar</div>
+      <div id="statusBadge" class="status-badge status-clean">Berhasil Dikirrim</div>
     </div>
   </div>
 
 </div>
 
 <script>
-  // GANTI LINK DI BAWAH INI DENGAN LINK WEB APP APPS SCRIPT ANDA (/exec)
   const API_URL = "https://script.google.com/macros/s/AKfycbwdrRXQ7T5IyCFLgDCqbPfjTjk6FUfi6xYcd8hBhld7gRGqHdt_wWy9xrI4m2IH77ypDQ/exec";
 
   let rawQuestions = [];
@@ -402,8 +390,6 @@
   let studentNameData = "";
   let studentClassData = "";
   let isExamFinished = false;
-
-  const SPLIT_SCREEN_ASPECT_RATIO_THRESHOLD = 0.60;
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -428,10 +414,7 @@
     studentClassData = kelas;
 
     try {
-      const resp = await fetch(API_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "getQuestions" })
-      });
+      const resp = await fetch(API_URL + "?action=getQuestions");
       const resData = await resp.json();
 
       if (resData.success) {
@@ -443,7 +426,7 @@
         alert("Gagal mengambil data soal dari server.");
       }
     } catch (err) {
-      alert("Gagal terhubung ke server. Pastikan URL Apps Script sudah benar.");
+      alert("Gagal terhubung ke server. Pastikan koneksi internet stabil.");
     } finally {
       document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
       document.getElementById("btnLogin").disabled = false;
@@ -456,20 +439,10 @@
   }
 
   function startExam() {
-    if (checkSplitScreen()) {
-      triggerCheating("Mulai Ujian dalam kondisi Layar Terbelah (Split-screen detected)");
-      return;
-    }
-
     randomizeExamData();
     showScreen("screen-exam");
     renderQuestion();
     startTimer();
-    initAntiCheat();
-
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    }
   }
 
   function randomizeExamData() {
@@ -542,38 +515,6 @@
     }, 1000);
   }
 
-  function initAntiCheat() {
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden && !isExamFinished) {
-        triggerCheating("Terdeteksi Pindah Tab / Minimize App");
-      }
-    });
-
-    window.addEventListener("blur", () => {
-      if (!isExamFinished) {
-        triggerCheating("Terdeteksi Meninggalkan Layar Ujian (Blur)");
-      }
-    });
-
-    window.addEventListener("resize", () => {
-      if (!isExamFinished && checkSplitScreen()) {
-        triggerCheating("Terdeteksi Layar Terbelah (Split-screen/Multi-window)");
-      }
-    });
-  }
-
-  function checkSplitScreen() {
-    const ratio = window.innerHeight / window.screen.height;
-    const widthRatio = window.innerWidth / window.screen.width;
-    return ratio < SPLIT_SCREEN_ASPECT_RATIO_THRESHOLD || widthRatio < 0.60;
-  }
-
-  function triggerCheating(reason) {
-    if (isExamFinished) return;
-    alert("KECURANGAN TERDETEKSI!\n" + reason + "\nUjian Anda telah dihentikan secara otomatis.");
-    finishExam("DIBATALKAN KARENA KECURANGAN: " + reason);
-  }
-
   async function finishExam(statusKecurangan) {
     if (isExamFinished) return;
     isExamFinished = true;
@@ -595,30 +536,28 @@
     
     const badge = document.getElementById("statusBadge");
     badge.innerText = statusKecurangan;
-    if (statusKecurangan.startsWith("Wajar") || statusKecurangan === "Waktu Habis") {
-      badge.className = "status-badge status-clean";
-    } else {
-      badge.className = "status-badge status-cheat";
-    }
+    badge.className = "status-badge status-clean";
 
     showScreen("screen-result");
 
-    // Send Result to Apps Script API
     try {
-      await fetch(API_URL, {
+      const payload = new URLSearchParams({
+        studentName: studentNameData,
+        studentClass: studentClassData,
+        correctCount: correctCount,
+        totalCount: totalCount,
+        score: finalScore,
+        statusCurang: statusKecurangan
+      });
+
+      fetch(API_URL, {
         method: "POST",
-        body: JSON.stringify({
-          action: "submitExam",
-          studentName: studentNameData,
-          studentClass: studentClassData,
-          correctCount: correctCount,
-          totalCount: totalCount,
-          score: finalScore,
-          statusCurang: statusKecurangan
-        })
+        mode: "no-cors",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: payload
       });
     } catch (err) {
-      console.error("Gagal mengirim hasil ujian ke server.");
+      console.error("Gagal mengirim hasil ujian.");
     }
   }
 </script>
