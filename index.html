@@ -372,7 +372,7 @@
       
       <p>Skor Benar: <b id="correctDisplay">0</b> / <b id="totalDisplay">50</b></p>
       
-      <div id="statusBadge" class="status-badge status-clean">Berhasil Dikirrim</div>
+      <div id="statusBadge" class="status-badge status-clean">Berhasil Dikirim</div>
     </div>
   </div>
 
@@ -391,7 +391,23 @@
   let studentClassData = "";
   let isExamFinished = false;
 
-  async function handleLogin(e) {
+  // Fungsi Callback JSONP untuk Memuat Soal dari Apps Script
+  window.handleQuestionsResponse = function(response) {
+    if (response && response.success) {
+      rawQuestions = response.data;
+      document.getElementById("displayStudentName").innerText = studentNameData;
+      document.getElementById("displayStudentClass").innerText = studentClassData;
+      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
+      document.getElementById("btnLogin").disabled = false;
+      showScreen("screen-instructions");
+    } else {
+      alert("Gagal memuat soal dari server.");
+      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
+      document.getElementById("btnLogin").disabled = false;
+    }
+  };
+
+  function handleLogin(e) {
     e.preventDefault();
     const user = document.getElementById("username").value.trim();
     const kelas = document.getElementById("studentClass").value.trim();
@@ -413,24 +429,15 @@
     studentNameData = user;
     studentClassData = kelas;
 
-    try {
-      const resp = await fetch(API_URL + "?action=getQuestions");
-      const resData = await resp.json();
-
-      if (resData.success) {
-        rawQuestions = resData.data;
-        document.getElementById("displayStudentName").innerText = studentNameData;
-        document.getElementById("displayStudentClass").innerText = studentClassData;
-        showScreen("screen-instructions");
-      } else {
-        alert("Gagal mengambil data soal dari server.");
-      }
-    } catch (err) {
+    // Panggil API via JSONP Script Injection (Bebas Masalah CORS)
+    const script = document.createElement("script");
+    script.src = API_URL + "?action=getQuestions&callback=handleQuestionsResponse";
+    script.onerror = function() {
       alert("Gagal terhubung ke server. Pastikan koneksi internet stabil.");
-    } finally {
       document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
       document.getElementById("btnLogin").disabled = false;
-    }
+    };
+    document.body.appendChild(script);
   }
 
   function showScreen(id) {
@@ -515,7 +522,7 @@
     }, 1000);
   }
 
-  async function finishExam(statusKecurangan) {
+  function finishExam(statusKecurangan) {
     if (isExamFinished) return;
     isExamFinished = true;
     clearInterval(timerInterval);
@@ -540,6 +547,7 @@
 
     showScreen("screen-result");
 
+    // Pengiriman Nilai ke Apps Script via Form POST
     try {
       const payload = new URLSearchParams({
         studentName: studentNameData,
