@@ -391,6 +391,57 @@
   let studentClassData = "";
   let isExamFinished = false;
 
+  // Mengambil data dari Google Apps Script menggunakan JSONP.
+  // Backend Code.gs saat ini memang mengembalikan callback(...), bukan JSON biasa.
+  function getQuestionsJSONP() {
+    return new Promise((resolve, reject) => {
+      const callbackName = "__cbtQuestions_" + Date.now() + "_" +
+        Math.random().toString(36).slice(2);
+
+      const script = document.createElement("script");
+      let completed = false;
+
+      const cleanup = () => {
+        if (script.parentNode) script.parentNode.removeChild(script);
+        try { delete window[callbackName]; }
+        catch (_) { window[callbackName] = undefined; }
+      };
+
+      const timeoutId = setTimeout(() => {
+        if (completed) return;
+        completed = true;
+        cleanup();
+        reject(new Error(
+          "Tidak ada respons dari Google Apps Script dalam 20 detik. Periksa URL deployment dan akses Web App."
+        ));
+      }, 20000);
+
+      window[callbackName] = (response) => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timeoutId);
+        cleanup();
+        resolve(response);
+      };
+
+      script.onerror = () => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timeoutId);
+        cleanup();
+        reject(new Error(
+          "Script dari Google Apps Script gagal dimuat. Periksa URL deployment dan izin akses Web App."
+        ));
+      };
+
+      script.src = API_URL +
+        "?action=getQuestions&callback=" + encodeURIComponent(callbackName) +
+        "&_=" + Date.now();
+
+      document.head.appendChild(script);
+    });
+  }
+
   async function handleLogin(e) {
     e.preventDefault();
 
@@ -404,8 +455,6 @@
       return;
     }
 
-    // Password lokal ini hanya pemeriksaan sederhana di sisi browser,
-    // bukan autentikasi yang aman. Ganti dengan verifikasi server bila diperlukan.
     if (pass !== "1234") {
       alert("Password yang dimasukkan tidak sesuai.");
       document.getElementById("password").focus();
@@ -418,43 +467,20 @@
     studentClassData = kelas;
 
     try {
-      // Cache-busting mencegah browser memakai respons lama.
-      const url = API_URL + "?action=getQuestions&_=" + Date.now();
-      const resp = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        redirect: "follow"
-      });
-
-      if (!resp.ok) {
-        throw new Error("Server mengembalikan HTTP " + resp.status + ".");
-      }
-
-      const responseText = await resp.text();
-      let resData;
-
-      try {
-        resData = JSON.parse(responseText);
-      } catch (_) {
-        throw new Error(
-          "Respons server bukan JSON. Periksa URL deployment Apps Script, akses Web App, dan fungsi doGet()."
-        );
-      }
+      const resData = await getQuestionsJSONP();
 
       if (!resData || resData.success !== true) {
         throw new Error(
           (resData && (resData.message || resData.error)) ||
-          "Server menolak permintaan atau gagal mengambil soal."
+          "Server gagal mengambil data soal."
         );
       }
 
-      // Mendukung format data soal berupa {success:true,data:[...]}.
       const questions = resData.data;
       if (!Array.isArray(questions) || questions.length === 0) {
-        throw new Error("Data soal kosong atau format data soal dari server tidak sesuai.");
+        throw new Error("Data soal kosong atau format data dari server tidak sesuai.");
       }
 
-      // Validasi bentuk minimal setiap soal agar error tidak baru muncul saat ujian dimulai.
       const invalidQuestion = questions.findIndex(q =>
         !q || typeof q.q !== "string" ||
         !Array.isArray(q.options) || q.options.length < 2 ||
@@ -463,7 +489,10 @@
       );
 
       if (invalidQuestion !== -1) {
-        throw new Error("Format soal nomor " + (invalidQuestion + 1) + " tidak lengkap. Periksa kolom soal, opsi, dan kunci jawaban di Google Sheets.");
+        throw new Error(
+          "Format soal nomor " + (invalidQuestion + 1) +
+          " tidak lengkap. Periksa teks soal, pilihan jawaban, dan kunci jawaban."
+        );
       }
 
       rawQuestions = questions.map(q => ({
@@ -477,19 +506,13 @@
 
     } catch (err) {
       console.error("Kesalahan login:", err);
-      let message = err && err.message ? err.message : String(err);
-
-      if (err instanceof TypeError) {
-        message = "Browser tidak dapat membaca respons Google Apps Script. Kemungkinan URL deployment salah, Web App belum dapat diakses, atau permintaan diblokir CORS. Periksa juga deployment terbaru.";
-      }
-
-      alert("Login belum berhasil.\n\n" + message);
+      alert("Login belum berhasil.\n\n" +
+        (err && err.message ? err.message : String(err)));
     } finally {
       btn.innerText = "Masuk Sistem Ujian";
       btn.disabled = false;
     }
   }
-
   function showScreen(id) {
     document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
     document.getElementById(id).classList.add("active");
