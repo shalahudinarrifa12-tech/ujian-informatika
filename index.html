@@ -379,196 +379,222 @@
 </div>
 
 <script>
+  // LINK APPS SCRIPT ANDA
   const API_URL = "https://script.google.com/macros/s/AKfycbwdrRXQ7T5IyCFLgDCqbPfjTjk6FUfi6xYcd8hBhld7gRGqHdt_wWy9xrI4m2IH77ypDQ/exec";
 
-  let rawQuestions = [];
-  let randomizedQuestions = [];
-  let userAnswers = {};
-  let currentStep = 0;
-  let timerInterval = null;
-  let totalSeconds = 60 * 60;
-  let studentNameData = "";
-  let studentClassData = "";
-  let isExamFinished = false;
-
-  // Fungsi Callback JSONP untuk Memuat Soal dari Apps Script
-  window.handleQuestionsResponse = function(response) {
-    if (response && response.success) {
-      rawQuestions = response.data;
-      document.getElementById("displayStudentName").innerText = studentNameData;
-      document.getElementById("displayStudentClass").innerText = studentClassData;
-      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
-      document.getElementById("btnLogin").disabled = false;
-      showScreen("screen-instructions");
-    } else {
-      alert("Gagal memuat soal dari server.");
-      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
-      document.getElementById("btnLogin").disabled = false;
-    }
-  };
-
-  function handleLogin(e) {
-    e.preventDefault();
-    const user = document.getElementById("username").value.trim();
-    const kelas = document.getElementById("studentClass").value.trim();
-    const pass = document.getElementById("password").value.trim();
-
-    if (pass !== "1234") {
-      alert("Password salah! Gunakan password '1234'.");
-      return;
-    }
-
-    if (!user || !kelas) {
-      alert("Silakan lengkapi Nama Siswa dan Kelas.");
-      return;
-    }
-
-    document.getElementById("btnLogin").innerText = "Menghubungkan...";
-    document.getElementById("btnLogin").disabled = true;
-
-    studentNameData = user;
-    studentClassData = kelas;
-
-    // Panggil API via JSONP Script Injection (Bebas Masalah CORS)
-    const script = document.createElement("script");
-    script.src = API_URL + "?action=getQuestions&callback=handleQuestionsResponse";
-    script.onerror = function() {
-      alert("Gagal terhubung ke server. Pastikan koneksi internet stabil.");
-      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
-      document.getElementById("btnLogin").disabled = false;
-    };
-    document.body.appendChild(script);
-  }
-
-  function showScreen(id) {
-    document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
-    document.getElementById(id).classList.add("active");
-  }
-
-  function startExam() {
-    randomizeExamData();
-    showScreen("screen-exam");
-    renderQuestion();
-    startTimer();
-  }
-
-  function randomizeExamData() {
-    let shuffled = JSON.parse(JSON.stringify(rawQuestions));
-    shuffled.sort(() => Math.random() - 0.5);
-
-    shuffled.forEach(q => {
-      let optionsWithIndex = q.options.map((opt, i) => ({ text: opt, isCorrect: i === q.ans }));
-      optionsWithIndex.sort(() => Math.random() - 0.5);
-      
-      q.shuffledOptions = optionsWithIndex.map(o => o.text);
-      q.newCorrectIndex = optionsWithIndex.findIndex(o => o.isCorrect);
-    });
-
-    randomizedQuestions = shuffled;
-    document.getElementById("totalQCount").innerText = randomizedQuestions.length;
-  }
-
-  function renderQuestion() {
-    const q = randomizedQuestions[currentStep];
-    document.getElementById("currentQIndex").innerText = currentStep + 1;
-    document.getElementById("questionText").innerText = q.q;
-
-    const container = document.getElementById("optionsContainer");
-    container.innerHTML = "";
-
-    const labels = ["A", "B", "C", "D"];
-    q.shuffledOptions.forEach((optText, index) => {
-      const isSelected = userAnswers[currentStep] === index;
-      const btn = document.createElement("div");
-      btn.className = `option-btn ${isSelected ? "selected" : ""}`;
-      btn.onclick = () => selectOption(index);
-      btn.innerHTML = `<div class="option-tag">${labels[index]}</div><div>${optText}</div>`;
-      container.appendChild(btn);
-    });
-
-    document.getElementById("btnPrev").style.visibility = currentStep === 0 ? "hidden" : "visible";
-    if (currentStep === randomizedQuestions.length - 1) {
-      document.getElementById("btnNext").classList.add("hidden");
-      document.getElementById("btnSubmit").classList.remove("hidden");
-    } else {
-      document.getElementById("btnNext").classList.remove("hidden");
-      document.getElementById("btnSubmit").classList.add("hidden");
-    }
-  }
-
-  function selectOption(index) {
-    if(isExamFinished) return;
-    userAnswers[currentStep] = index;
-    renderQuestion();
-  }
-
-  function navigate(direction) {
-    currentStep += direction;
-    renderQuestion();
-  }
-
-  function startTimer() {
-    timerInterval = setInterval(() => {
-      totalSeconds--;
-      let m = Math.floor(totalSeconds / 60);
-      let s = totalSeconds % 60;
-      document.getElementById("timerDisplay").innerText = 
-        `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-
-      if (totalSeconds <= 0) {
-        clearInterval(timerInterval);
-        finishExam("Waktu Habis");
-      }
-    }, 1000);
-  }
-
-  function finishExam(statusKecurangan) {
-    if (isExamFinished) return;
-    isExamFinished = true;
-    clearInterval(timerInterval);
-
-    let correctCount = 0;
-    randomizedQuestions.forEach((q, idx) => {
-      if (userAnswers[idx] === q.newCorrectIndex) {
-        correctCount++;
-      }
-    });
-
-    const totalCount = randomizedQuestions.length;
-    const finalScore = Math.round((correctCount / totalCount) * 100);
-
-    document.getElementById("scoreDisplay").innerText = finalScore;
-    document.getElementById("correctDisplay").innerText = correctCount;
-    document.getElementById("totalDisplay").innerText = totalCount;
-    
-    const badge = document.getElementById("statusBadge");
-    badge.innerText = statusKecurangan;
-    badge.className = "status-badge status-clean";
-
-    showScreen("screen-result");
-
-    // Pengiriman Nilai ke Apps Script via Form POST
-    try {
-      const payload = new URLSearchParams({
-        studentName: studentNameData,
-        studentClass: studentClassData,
-        correctCount: correctCount,
-        totalCount: totalCount,
-        score: finalScore,
-        statusCurang: statusKecurangan
-      });
-
-      fetch(API_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: payload
-      });
-    } catch (err) {
-      console.error("Gagal mengirim hasil ujian.");
-    }
-  }
-</script>
-
-</body>
-</html>
+  // DATA SOAL DISIMPAN LANGSUNG (BEBAS ERROR KONEKSI SERVER)
+  const rawQuestions = [
+    {
+      q: "Sebuah mesin tiket di sekolah menerima nomor kartu siswa, kemudian memeriksa data siswa dan mencetak tiket masuk.\nUrutan input–proses–output yang tepat adalah ....",
+      options: ["mencetak tiket → memeriksa data → nomor kartu", "nomor kartu → memeriksa data → tiket masuk", "memeriksa data → nomor kartu → tiket masuk", "nomor kartu → tiket masuk → memeriksa data"],
+      ans: 1
+    },
+    {
+      q: "Diberikan fungsi: f(x) = 3x + 2\nJika input yang diberikan adalah 6, output yang dihasilkan adalah ....",
+      options: ["18", "20", "21", "24"],
+      ans: 1
+    },
+    {
+      q: "Sebuah mesin menerima bilangan 8. Mesin tersebut melakukan proses mengalikan input dengan 4 kemudian mengurangi 5. Output mesin tersebut adalah ....",
+      options: ["22", "27", "32", "37"],
+      ans: 1
+    },
+    {
+      q: "Perhatikan mesin berikut.\nInput → ×5 → +10 → Output\nJika output yang dihasilkan adalah 40, input yang paling tepat adalah ....",
+      options: ["5", "6", "7", "8"],
+      ans: 1
+    },
+    {
+      q: "Dalam sebuah kelas terdapat himpunan siswa yang mengikuti klub komputer:\nK = {Andi, Budi, Citra, Deni}\nSementara itu: L = {Citra, Deni, Eka}\nAnggota yang terdapat pada kedua himpunan adalah ....",
+      options: ["Andi dan Budi", "Citra dan Deni", "Deni dan Eka", "Andi, Budi, dan Eka"],
+      ans: 1
+    },
+    {
+      q: "Dalam sebuah kelas terdapat himpunan siswa yang mengikuti klub komputer:\nK = {Andi, Budi, Citra, Deni}\nSementara itu: L = {Citra, Deni, Eka}\ngabungan himpunan K dan L adalah ....",
+      options: ["{Andi, Budi, Citra, Deni}", "{Citra, Deni, Eka}", "{Andi, Budi, Citra, Deni, Eka}", "{Andi, Budi, Eka}"],
+      ans: 2
+    },
+    {
+      q: "Dari 32 siswa, 18 siswa mengikuti klub komputer dan 15 siswa mengikuti klub desain. Jika 7 siswa mengikuti kedua klub tersebut, banyak siswa yang mengikuti satu klub saja adalah ....",
+      options: ["19 siswa", "24 siswa", "26 siswa", "40 siswa"],
+      ans: 0
+    },
+    {
+      q: "Komputer menggunakan beberapa sistem bilangan. Sistem bilangan yang menggunakan hanya simbol 0 dan 1 disebut ....",
+      options: ["Decimal", "oktal", "biner", "heksadesimal"],
+      ans: 2
+    },
+    {
+      q: "Bilangan desimal 25 jika dikonversikan ke bilangan biner menjadi ....",
+      options: ["10101₂", "11001₂", "11010₂", "11100₂"],
+      ans: 1
+    },
+    {
+      q: "Bilangan desimal 50 jika dinyatakan dalam bilangan biner adalah ....",
+      options: ["101010₂", "110010₂", "110100₂", "111010₂"],
+      ans: 1
+    },
+    {
+      q: "Bilangan desimal 64 jika dikonversikan ke bilangan oktal adalah ....",
+      options: ["80₈", "100₈", "110₈", "120₈"],
+      ans: 1
+    },
+    {
+      q: "Bilangan biner 1011₂ memiliki nilai desimal ....",
+      options: ["9", "10", "11", "12"],
+      ans: 2
+    },
+    {
+      q: "Sebuah sensor menghasilkan nilai 11100₂. Nilai tersebut dalam sistem desimal adalah ....",
+      options: ["24", "26", "28", "30"],
+      ans: 2
+    },
+    {
+      q: "Bilangan oktal 27₈ jika dikonversikan ke desimal adalah ....",
+      options: ["19", "21", "23", "25"],
+      ans: 2
+    },
+    {
+      q: "Perhatikan tumpukan buku berikut:\nBuku D\nBuku C\nBuku B\nBuku A\nJika buku yang dapat diambil terlebih dahulu adalah buku yang berada paling atas, buku yang diambil pertama adalah ....",
+      options: ["Buku A", "Buku B", "Buku C", "Buku D"],
+      ans: 3
+    },
+    {
+      q: "Prinsip kerja struktur data stack adalah ...",
+      options: ["FIFO", "LIFO", "FILO dan FIFO sekaligus", "acak"],
+      ans: 1
+    },
+    {
+      q: "Sebuah stack mula-mula kosong. Kemudian dilakukan operasi:\nPush A → Push B → Push C → Pop\nElemen yang keluar dari stack adalah ....",
+      options: ["A", "B", "C", "tidak ada"],
+      ans: 2
+    },
+    {
+      q: "Sebuah tumpukan berisi:\n30\n20\n10\ndengan 30 berada di posisi paling atas. Jika dilakukan Pop, keadaan stack menjadi ....",
+      options: ["[20, 30]", "[10, 20]", "[10, 30]", "[30]"],
+      ans: 1
+    },
+    {
+      q: "Dalam menghitung ekspresi matematika, komputer dapat menggunakan stack untuk menyimpan operand dan operator. Ekspresi:\n5 + 3\ndengan pendekatan stack menghasilkan ....",
+      options: ["2", "5", "8", "15"],
+      ans: 2
+    },
+    {
+      q: "Kiki melakukan operasi:\n5 × 2 + 3\nDalam bentuk penulisan menggunakan stack seperti yang dipelajari, urutannya adalah 5 2 × 3 +. Hasil operasi tersebut adalah ....",
+      options: ["10", "11", "13", "15"],
+      ans: 2
+    },
+    {
+      q: "Sebuah komputer digunakan untuk mengetik laporan. Perangkat yang digunakan untuk memasukkan huruf ke dalam komputer adalah ....",
+      options: ["Monitor", "printer", "keyboard", "speaker"],
+      ans: 2
+    },
+    {
+      q: "Perhatikan aktivitas berikut.\nSiswa mengetik data menggunakan keyboard.\nCPU mengolah data.\nHasil ditampilkan di monitor.\nUrutan proses yang tepat adalah ....",
+      options: ["output → proses → input", "input → proses → output", "proses → input → output", "input → output → proses"],
+      ans: 1
+    },
+    {
+      q: "Seorang siswa ingin menyimpan file video berukuran besar agar dapat dibawa dan dibuka pada komputer lain. Perangkat yang paling sesuai adalah ....",
+      options: ["Speaker", "flashdisk", "keyboard", "monitor"],
+      ans: 1
+    },
+    {
+      q: "Perhatikan kelompok perangkat berikut.\nWindows, Linux, Android\nKetiganya termasuk ....",
+      options: ["perangkat input", "perangkat output", "sistem operasi", "aplikasi pengolah kata"],
+      ans: 2
+    },
+    {
+      q: "Komputer menggunakan sistem bilangan heksadesimal untuk menampilkan alamat memori. Sistem bilangan heksadesimal memiliki basis ....",
+      options: ["2", "8", "10", "16"],
+      ans: 3
+    },
+    {
+      q: "Simbol yang dapat digunakan dalam sistem bilangan heksadesimal setelah angka 9 adalah ....",
+      options: ["A sampai F", "G sampai L", "X sampai Z", "hanya angka 0 sampai 9"],
+      ans: 0
+    },
+    {
+      q: "Bilangan Hexadesiman D9 jika dikonversikan ke bilangan binner adalah ....",
+      options: ["1101 1001", "1100 1001", "1101 1101", "1001 1101"],
+      ans: 0
+    },
+    {
+      q: "Komponen komputer yang bertugas melakukan pemrosesan instruksi dan data adalah ....",
+      options: ["CPU", "monitor", "printer", "keyboard"],
+      ans: 0
+    },
+    {
+      q: "Ketika siswa menjalankan aplikasi pengolah kata, CPU menerima instruksi dari program kemudian mengolahnya. Fungsi CPU dalam situasi tersebut adalah ....",
+      options: ["menyimpan dokumen secara permanen", "memproses instruksi dan data", "mencetak dokumen", "menampilkan gambar pada layar"],
+      ans: 1
+    },
+    {
+      q: "Jika sebuah komputer memiliki CPU yang mampu memproses instruksi dengan cepat, tetapi perangkat penyimpanannya sangat lambat, salah satu dampaknya adalah ....",
+      options: ["seluruh proses komputer selalu lebih cepat", "proses membaca dan menyimpan data dapat terhambat", "monitor tidak dapat digunakan", "keyboard berubah menjadi perangkat output"],
+      ans: 1
+    },
+    {
+      q: "Dalam jaringan komputer, komputer, laptop, HP, switch, dan router dapat berperan sebagai ....",
+      options: ["Node", "link", "browser", "protokol"],
+      ans: 0
+    },
+    {
+      q: "Jalur yang menghubungkan satu perangkat dengan perangkat lainnya dalam jaringan disebut ....",
+      options: ["Node", "link", "CPU", "memori"],
+      ans: 1
+    },
+    {
+      q: "Sebuah jaringan memiliki beberapa komputer yang terhubung ke satu switch. Dalam abstraksi jaringan, switch tersebut berfungsi sebagai ....",
+      options: ["penyimpan file", "node penghubung", "perangkat input", "aplikasi client"],
+      ans: 1
+    },
+    {
+      q: "Rina mengirim file kepada Dodi melalui jaringan. Router harus menentukan jalur yang akan dilalui paket data. Proses tersebut disebut ....",
+      options: ["Browsing", "routing", "formatting", "rendering"],
+      ans: 1
+    },
+    {
+      q: "Terdapat tiga kemungkinan jalur dari komputer A menuju komputer D:\nJalur 1 = 8 hop\nJalur 2 = 5 hop\nJalur 3 = 7 hop\nJika semua jalur memiliki kondisi yang sama, jalur yang paling pendek adalah ....",
+      options: ["Jalur 1", "Jalur 2", "Jalur 3", "semua sama"],
+      ans: 1
+    },
+    {
+      q: "Seorang siswa menggunakan ponsel untuk mengirim pesan kepada temannya melalui internet. Agar komunikasi data dapat berlangsung, ponsel harus terhubung dengan jaringan yang menyediakan konektivitas. Contoh media koneksi tersebut adalah ....",
+      options: ["jaringan seluler atau Wi-Fi", "printer", "keyboard", "scanner"],
+      ans: 0
+    },
+    {
+      q: "Ketika seseorang berada di lokasi yang tidak memiliki Wi-Fi, tetapi masih dapat mengakses internet melalui jaringan operator seluler, koneksi tersebut memanfaatkan ....",
+      options: ["jaringan seluler", "kabel printer", "monitor", "flashdisk"],
+      ans: 0
+    },
+    {
+      q: "Jika koneksi internet pada ponsel tiba-tiba tidak dapat digunakan, langkah awal yang paling tepat adalah ....",
+      options: ["langsung menghapus semua data", "memeriksa koneksi jaringan dan pengaturan data", "mengganti layar ponsel", "menhapus sistem operasi"],
+      ans: 1
+    },
+    {
+      q: "Andi mendapatkan pesan yang berisi tautan dari orang yang tidak dikenal. Pesan tersebut meminta Andi memasukkan kata sandi akun sekolah. Tindakan paling aman adalah ....",
+      options: ["langsung membuka tautan", "memberikan kata sandi", "mengabaikan dan memeriksa kebenaran sumber", "meneruskan tautan kepada teman"],
+      ans: 2
+    },
+    {
+      q: "Saat membuka sebuah situs, browser memberikan peringatan bahwa situs tersebut berbahaya. Tindakan yang paling tepat adalah ....",
+      options: ["tetap melanjutkan karena ingin mengetahui isinya", "menutup atau meninggalkan situs tersebut", "memasukkan data pribadi", "mengunduh semua file dari situs"],
+      ans: 1
+    },
+    {
+      q: "Salah satu cara meningkatkan keamanan saat menggunakan browser adalah ....",
+      options: ["menyimpan semua kata sandi di komputer umum", "mengabaikan peringatan keamanan", "memeriksa pengaturan privasi dan keamanan browser", "membuka semua tautan yang diterima"],
+      ans: 2
+    },
+    {
+      q: "Seorang siswa menemukan situs yang tidak dikenal dan ingin mengetahui apakah situs tersebut aman. Langkah yang paling bijaksana adalah ....",
+      options: ["langsung memasukkan nomor telepon", "memeriksa reputasi dan keamanan situs terlebih dahulu", "mengunduh semua file yang tersedia", "memberikan username dan password"],
+      ans: 1
+    },
+    {
+      q: "Siswa diminta membuat surat resmi dengan format paragraf, tabel, dan gambar. Aplikasi yang paling sesuai adalah…",
+      options: ["Microsoft Word", "Chrome", "Microsoft Excel", "Capcut"],
+      ans: 0
