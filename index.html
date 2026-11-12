@@ -393,43 +393,100 @@
 
   async function handleLogin(e) {
     e.preventDefault();
+
     const user = document.getElementById("username").value.trim();
     const kelas = document.getElementById("studentClass").value.trim();
     const pass = document.getElementById("password").value.trim();
+    const btn = document.getElementById("btnLogin");
 
+    if (!user || !kelas || !pass) {
+      alert("Nama siswa, kelas, dan password wajib diisi.");
+      return;
+    }
+
+    // Password lokal ini hanya pemeriksaan sederhana di sisi browser,
+    // bukan autentikasi yang aman. Ganti dengan verifikasi server bila diperlukan.
     if (pass !== "1234") {
-      alert("Password salah! Gunakan password '1234'.");
+      alert("Password yang dimasukkan tidak sesuai.");
+      document.getElementById("password").focus();
       return;
     }
 
-    if (!user || !kelas) {
-      alert("Silakan lengkapi Nama Siswa dan Kelas.");
-      return;
-    }
-
-    document.getElementById("btnLogin").innerText = "Menghubungkan...";
-    document.getElementById("btnLogin").disabled = true;
-
+    btn.disabled = true;
+    btn.innerText = "Menghubungkan ke server...";
     studentNameData = user;
     studentClassData = kelas;
 
     try {
-      const resp = await fetch(API_URL + "?action=getQuestions");
-      const resData = await resp.json();
+      // Cache-busting mencegah browser memakai respons lama.
+      const url = API_URL + "?action=getQuestions&_=" + Date.now();
+      const resp = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+        redirect: "follow"
+      });
 
-      if (resData.success) {
-        rawQuestions = resData.data;
-        document.getElementById("displayStudentName").innerText = studentNameData;
-        document.getElementById("displayStudentClass").innerText = studentClassData;
-        showScreen("screen-instructions");
-      } else {
-        alert("Gagal mengambil data soal dari server.");
+      if (!resp.ok) {
+        throw new Error("Server mengembalikan HTTP " + resp.status + ".");
       }
+
+      const responseText = await resp.text();
+      let resData;
+
+      try {
+        resData = JSON.parse(responseText);
+      } catch (_) {
+        throw new Error(
+          "Respons server bukan JSON. Periksa URL deployment Apps Script, akses Web App, dan fungsi doGet()."
+        );
+      }
+
+      if (!resData || resData.success !== true) {
+        throw new Error(
+          (resData && (resData.message || resData.error)) ||
+          "Server menolak permintaan atau gagal mengambil soal."
+        );
+      }
+
+      // Mendukung format data soal berupa {success:true,data:[...]}.
+      const questions = resData.data;
+      if (!Array.isArray(questions) || questions.length === 0) {
+        throw new Error("Data soal kosong atau format data soal dari server tidak sesuai.");
+      }
+
+      // Validasi bentuk minimal setiap soal agar error tidak baru muncul saat ujian dimulai.
+      const invalidQuestion = questions.findIndex(q =>
+        !q || typeof q.q !== "string" ||
+        !Array.isArray(q.options) || q.options.length < 2 ||
+        !Number.isInteger(Number(q.ans)) ||
+        Number(q.ans) < 0 || Number(q.ans) >= q.options.length
+      );
+
+      if (invalidQuestion !== -1) {
+        throw new Error("Format soal nomor " + (invalidQuestion + 1) + " tidak lengkap. Periksa kolom soal, opsi, dan kunci jawaban di Google Sheets.");
+      }
+
+      rawQuestions = questions.map(q => ({
+        ...q,
+        ans: Number(q.ans)
+      }));
+
+      document.getElementById("displayStudentName").innerText = studentNameData;
+      document.getElementById("displayStudentClass").innerText = studentClassData;
+      showScreen("screen-instructions");
+
     } catch (err) {
-      alert("Gagal terhubung ke server. Pastikan koneksi internet stabil.");
+      console.error("Kesalahan login:", err);
+      let message = err && err.message ? err.message : String(err);
+
+      if (err instanceof TypeError) {
+        message = "Browser tidak dapat membaca respons Google Apps Script. Kemungkinan URL deployment salah, Web App belum dapat diakses, atau permintaan diblokir CORS. Periksa juga deployment terbaru.";
+      }
+
+      alert("Login belum berhasil.\n\n" + message);
     } finally {
-      document.getElementById("btnLogin").innerText = "Masuk Sistem Ujian";
-      document.getElementById("btnLogin").disabled = false;
+      btn.innerText = "Masuk Sistem Ujian";
+      btn.disabled = false;
     }
   }
 
@@ -439,6 +496,11 @@
   }
 
   function startExam() {
+    if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+      alert("Soal belum berhasil dimuat. Silakan kembali dan login ulang.");
+      showScreen("screen-login");
+      return;
+    }
     randomizeExamData();
     showScreen("screen-exam");
     renderQuestion();
